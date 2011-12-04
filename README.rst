@@ -1,4 +1,5 @@
-m2go, a `Mongrel2 http server<http://mongrel2.org>`_ for go.   Includes adapter to run `Web.go <https://github.com/hoisie/web.go>`_
+m2go, a `Mongrel2 http server <http://mongrel2.org>`_ for go.   Includes adapter to run `Web.go <https://github.com/hoisie/web.go>`_ 
+
 
 Installation
 ========================

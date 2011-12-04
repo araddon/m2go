@@ -25,7 +25,8 @@ import (
   //"reflect"
 )
 
-
+// TODO:   revamp so that raw/extra/payload are []byte slices
+// so they all reference same underlying array 
 type Tnet struct {
   Raw string
   Payload string
@@ -76,7 +77,6 @@ func NewTnet(datain string) (tn Tnet, err error){
     }
   }
 
-  //fmt.Printf("tnetstrings 1 = %s\n 2=%s\n3=\n%s", payload, tnet.datatype, value)
   return 
 }
 
@@ -108,6 +108,8 @@ func (tn *Tnet) parse() (err error){
   
   return
 }
+
+// parseList parses the payload which contains list
 func parseList(tparent *Tnet) (err error){
   if len(tparent.Payload) == 0 {
     return 
@@ -142,6 +144,8 @@ func parseList(tparent *Tnet) (err error){
   
   return 
 }
+
+// parse payload of parent into map values 
 func parseDict(tparent *Tnet) (err error){
   
   if len(tparent.Payload) == 0 {

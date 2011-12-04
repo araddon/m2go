@@ -20,7 +20,6 @@ import (
   //"strconv"
   "web"
   zmq "github.com/alecthomas/gozmq"
-  //config "github.com/kless/goconfig/config"
 )
 
 var Logger = log.New(os.Stdout, "", log.Ldate|log.Ltime)
@@ -264,7 +263,7 @@ func loadConfig(){
 
 //Runs the web application and serves scgi requests
 func Run(addr string) {
-    web.Runner(addr, M2Runner)
+  web.Runner(addr, M2Runner)
 }
 
 // method for server that Runs the web application, sets up m2 connections
@@ -276,13 +275,14 @@ func M2Runner(s *web.Server, addr string) {
   var Context zmq.Context
   var SocketIn zmq.Socket
   var SocketOut zmq.Socket
+
   m2addr := strings.Split(addr,"|")//  
   
+  // turn off static web serving from web.go, it is handled by mongrel2
   s.Config.StaticDir = "NONE"
 
-  //mainServer.RunM2(addr)
   if s.Logger == nil {
-      s.Logger = Logger
+    s.Logger = Logger
   }
   s.Logger.Printf("web.go serving m2 %s\n", addr)
   
