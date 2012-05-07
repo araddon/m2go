@@ -20,20 +20,16 @@ func main() {
 }
 
 func hello(w http.ResponseWriter, r *http.Request) {
-	// Path variable names are in the URL.Query() and start with ':'.
-	log.Println(r.URL)
-	log.Println(r.URL.Query())
 	name := r.URL.Query().Get(":name")
 	io.WriteString(w, "Hello, "+name)
 }
+
 func cookie(w http.ResponseWriter, r *http.Request) {
 	c := http.Cookie{Name: r.URL.Query().Get(":name"), Value: r.URL.Query().Get(":value"), Path: "/"}
-	log.Println(c.String())
 	http.SetCookie(w, &c)
 	log.Println(len(r.Cookies()))
 	//w.Header().Add("Set-Cookie", cookie.String())
 	for _, ckie := range r.Cookies() {
-		log.Println(ckie)
 		io.WriteString(w, "Cookie:  "+ckie.String()+"<br />")
 	}
 	if len(r.Cookies()) == 0 {
@@ -41,28 +37,10 @@ func cookie(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-/*
-type Cookie struct {
-    22		Name       string
-    23		Value      string
-    24		Path       string
-    25		Domain     string
-    26		Expires    time.Time
-    27		RawExpires string
-    28	
-    29		// MaxAge=0 means no 'Max-Age' attribute specified. 
-    30		// MaxAge<0 means delete cookie now, equivalently 'Max-Age: 0'
-    31		// MaxAge>0 means Max-Age attribute present and given in seconds
-    32		MaxAge   int
-    33		Secure   bool
-    34		HttpOnly bool
-    35		Raw      string
-    36		Unparsed []string // Raw text of unparsed attribute-value pairs
-    37	}
-*/
 func empty(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, "empty ")
 }
+
 func stream(w http.ResponseWriter, r *http.Request) {
 	// Path variable names are in the URL.Query() and start with ':'.
 	log.Println("about to set transfer encoding")
