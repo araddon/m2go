@@ -1,328 +1,284 @@
-/*
-
-  Mongrel2 Handler, Parser, and Web.go Adapter
-
-*/
 package m2go
 
 import (
-  "bytes"
-  "encoding/json"
-  "errors"
-  "flag"
-  "fmt"
-  "io"
-  "log"
-  "net/http"
-  "net/url"
-  "os"
-  "strings"
-  //"strconv"
-  "web"
-  zmq "github.com/alecthomas/gozmq"
+	"bytes"
+	"fmt"
+	zmq "github.com/alecthomas/gozmq"
+	"github.com/bmizerany/pat"
+	"log"
+	"net/http"
+	"strconv"
+	"strings"
 )
 
-var Logger = log.New(os.Stdout, "", log.Ldate|log.Ltime)
-
 var er error
+var ReconnectOnZmq bool
 
-type Config struct {
-  logfile string
-  configFile string
-  useconsole bool
-}
-
-var M2Config = &Config{"log/dev.log","prod.conf", true}
-
-
-/*  
-  M2 Request and server handling
-*/
-
-type M2Request struct {
-  uuid string
-  requestid string 
-  path string
-  rest string
-  body string
-  headers string
-  cid uint //customer id
-}
-
-type Response struct {
-  out string // response text
-  status string // OK etc
-  code string //  404, 500, etc
-}
-
+/*
 type m2Conn struct {
-    headers      map[string][]string
-    wroteHeaders bool
-    out          bytes.Buffer
+	headers      map[string][]string
+	wroteHeaders bool
+	out          bytes.Buffer
 }
 
 func (conn *m2Conn) Write(data []byte) (n int, err error) {
-    var buf bytes.Buffer
+	var buf bytes.Buffer
 
-    if !conn.wroteHeaders {
-        conn.wroteHeaders = true
-        for k, v := range conn.headers {
-            for _, i := range v {
-                buf.WriteString(k + ": " + i + "\r\n")
-            }
-        }
+	if !conn.wroteHeaders {
+		conn.wroteHeaders = true
+		for k, v := range conn.headers {
+			for _, i := range v {
+				buf.WriteString(k + ": " + i + "\r\n")
+			}
+		}
 
-        buf.WriteString("\r\n")
-        conn.out.Write(buf.Bytes())
-    }
-    return conn.out.Write(data)
+		buf.WriteString("\r\n")
+		conn.out.Write(buf.Bytes())
+	}
+	return conn.out.Write(data)
 }
 
 func (conn *m2Conn) StartResponse(status int) {
-    var buf bytes.Buffer
-    text := web.StatusText[status]
+	var buf bytes.Buffer
+	text := web.StatusText[status]
 
-    fmt.Fprintf(&buf, "HTTP/1.1 %d %s\r\n", status, text)
-    conn.out.Write(buf.Bytes())
+	fmt.Fprintf(&buf, "HTTP/1.1 %d %s\r\n", status, text)
+	conn.out.Write(buf.Bytes())
 }
 
 func (conn *m2Conn) SetHeader(hdr string, val string, unique bool) {
-    if _, contains := conn.headers[hdr]; !contains {
-        conn.headers[hdr] = []string{val}
-        return
-    }
+	if _, contains := conn.headers[hdr]; !contains {
+		conn.headers[hdr] = []string{val}
+		return
+	}
 
-    if unique {
-        //just overwrite the first value
-        conn.headers[hdr][0] = val
-    } else {
-        newHeaders := make([]string, len(conn.headers)+1)
-        copy(newHeaders, conn.headers[hdr])
-        newHeaders[len(newHeaders)-1] = val
-        conn.headers[hdr] = newHeaders
-    }
+	if unique {
+		//just overwrite the first value
+		conn.headers[hdr][0] = val
+	} else {
+		newHeaders := make([]string, len(conn.headers)+1)
+		copy(newHeaders, conn.headers[hdr])
+		newHeaders[len(newHeaders)-1] = val
+		conn.headers[hdr] = newHeaders
+	}
 }
 
 func (conn *m2Conn) Close() {
-  
-}
-
-func NewHttpRequestFromM2(headers http.Header, body io.Reader) *web.Request {
-
-  host := headers.Get("host")
-  method := strings.ToUpper(headers.Get("method"))
-  path := headers.Get("uri")
-  proto := headers.Get("version")
-  rawurl := "http://" + host  + path
-  url_, _ := url.Parse(rawurl)
-  useragent := headers.Get("user-agent")
-  remoteAddr := headers.Get("x-forwarded-for")
-  //remotePort, _ := strconv.Atoi(headers.Get("REMOTE_PORT"))
-
-  if method == "POST" {
-      if ctype, ok := headers["CONTENT_TYPE"]; ok {
-          headers["Content-Type"] = ctype
-      }
-
-      if clength, ok := headers["CONTENT_LENGTH"]; ok {
-          headers["Content-Length"] = clength
-      }
-  }
-
-  //read the cookies
-  cookies := web.ReadCookies(headers)
-
-  return &web.Request{
-      Method:     method,
-      RawURL:     rawurl,
-      URL:        url_,
-      Proto:      proto,
-      Host:       host,
-      UserAgent:  useragent,
-      Body:       body,
-      Headers:    headers,
-      RemoteAddr: remoteAddr,
-      //RemotePort: remotePort,
-      Cookie:     cookies,
-  }
 
 }
-
-// Parse an incoming request of format/type mongrel2
-// and return an M2Request object
-func M2Parse(reqs string) (r *M2Request, err error){
-    
-  r = new(M2Request)
-  //Logger.Printf("raw\n\n %s \n\n", strconv.Quote(string(reqs)))
-
-  parts := strings.SplitN(string(reqs)," ",4)
-  r.uuid = parts[0]
-  r.requestid = parts[1]
-  r.path = parts[2]
-  r.rest = strings.ToLower(parts[3])
-
-  tn, err := NewTnet(r.rest)
-  if err != nil {
-    err = errors.New("Error parsing request " + err.Error())
-    return
-  }
-  r.headers = tn.Value.(string)
-  tnetb, err := tn.Next()
-  if err != nil {
-    err = errors.New("Error parsing request " + err.Error())
-    return
-  }
-  r.body = tnetb.Value.(string)
-  
-  return
+*/
+// implementation of http.ResponseWriter interface
+type M2Writer struct {
+	req          *http.Request
+	m2req        *M2Request
+	wroteHeaders bool
+	out          bytes.Buffer
+	hdr          bytes.Buffer
+	Stream       func([]byte)
+	resp         *http.Response
+	chunked      bool
 }
 
-func MakeWebGoRequest(m2req *M2Request) (req *web.Request, err error) {
-  headers := make(http.Header)
+func (w *M2Writer) Flush() {
 
-  var f map[string]interface{}
+	if !w.wroteHeaders {
+		w.WriteHeaderResponse(nil)
 
-  err = json.Unmarshal([]byte(m2req.headers), &f)
-  
-  if err != nil {
-    Logger.Printf("arg, error %s", err)
-  }
-  for k, v := range f {
-    headers.Set(k, v.(string))
-  }
-  body := bytes.NewBuffer([]byte(m2req.body))
-  
-  req = NewHttpRequestFromM2(headers, body)
+		msg := fmt.Sprintf("%s %d:%s, %s%s", w.m2req.uuid, len(w.m2req.requestid), w.m2req.requestid,
+			string(w.hdr.Bytes()), string(w.out.Bytes()))
 
-  return req, nil
+		if len(msg) > 200 {
+			log.Print("--------------------RESPONSE---------------------\n" + msg[:200] + "\n")
+		} else {
+			log.Print("--------------------RESPONSE---------------------\n" + msg + "\n")
+		}
+
+		w.Stream([]byte(msg))
+
+		w.out = bytes.Buffer{}
+		w.hdr = bytes.Buffer{}
+	} else {
+		// for streaming! not the \r\n terminating
+		msg := fmt.Sprintf("%s %d:%s, %s\r\n", w.m2req.uuid, len(w.m2req.requestid), w.m2req.requestid, string(w.out.Bytes()))
+		w.Stream([]byte(msg))
+		w.out = bytes.Buffer{}
+	}
+}
+func (w *M2Writer) Write(data []byte) (n int, err error) {
+	w.out.Write(data)
+	if w.wroteHeaders {
+		w.Flush()
+	}
+	return len(data), nil
 }
 
-func HandleM2Request(s *web.Server, datain []byte, response func(response string)()) {
-  
-  m2req, tnerr := M2Parse(string(datain))
-  if tnerr != nil {
-    // TODO: tap into web.go 500 mechanism
-    Logger.Println("ERROR", tnerr.Error())
-  }
+func (w *M2Writer) Header() http.Header {
+	return w.resp.Header
+}
+func (w *M2Writer) WriteHeaderResponse(data []byte) {
 
-  wreq, err := MakeWebGoRequest(m2req)
-  if err != nil {
-    // TODO: tap into web.go 500 mechanism
-    Logger.Println("error", err.Error())
-  }
+	w.wroteHeaders = true
+	n := w.out.Len()
+	w.resp.Header["Content-Length"] = []string{strconv.FormatInt(int64(n), 10)}
 
-  conn := m2Conn{ make(map[string][]string), false, bytes.Buffer{}}
-  s.RouteHandler(wreq, &conn)
-  
-  msg := fmt.Sprintf("%s %d:%s, %s", m2req.uuid, len(m2req.requestid), m2req.requestid, string(conn.out.Bytes()))
-  Logger.Print("--------------------RESPONSE---------------------\n" + msg + "\n")
-  response(msg)
+	// RequestMethod should be upper-case
+	if w.req != nil {
+		w.req.Method = strings.ToUpper(w.req.Method)
+	}
+
+	// Status line
+	statusText, ok := StatusText[w.resp.StatusCode]
+	if !ok {
+		statusText = "status code " + strconv.Itoa(w.resp.StatusCode)
+	}
+	w.hdr.WriteString("HTTP/" + strconv.Itoa(w.resp.ProtoMajor) + ".")
+	w.hdr.WriteString(strconv.Itoa(w.resp.ProtoMinor) + " ")
+	w.hdr.WriteString(strconv.Itoa(w.resp.StatusCode) + " " + statusText + "\r\n")
+
+	te := w.resp.Header.Get("Transfer-Encoding")
+	if te == "chunked" {
+		//resp.Header.Del("Content-Length")
+		w.chunked = true
+		delete(w.resp.Header, "Content-Length")
+	}
+
+	// if we have set a new cookie, make sure we add in others that haven't changed
+	/*
+		if s := w.resp.Header.Get("Set-Cookie"); len(s) > 0 {
+			for _, ckie := range w.req.Cookies() {
+				if strings.Index(s, ckie.Name+"=") == -1 {
+					//w.resp.Header.Add("Set-Cookie", ckie.String())
+				}
+			}
+		}
+	*/
+
+	for k, v := range w.resp.Header {
+		// this isn't right
+		for _, i := range v {
+			w.hdr.WriteString(k + ": " + i + "\r\n")
+		}
+	}
+
+	// End-of-header
+	w.hdr.WriteString("\r\n")
+
+}
+func (w *M2Writer) WriteHeader(code int) {
+	w.resp.StatusCode = code
 }
 
-// default package init function
-func init() {
+func HandleM2Request(datain []byte, response func(b []byte), handler http.Handler) {
 
-  RegisterSignalHandler(os.SIGINT, func() { 
-    fmt.Print("in signal handler SIGINT")
-    Exit(0) 
-  })
-  RegisterSignalHandler(os.SIGTERM, func() { 
-    fmt.Print("in signal handler SIGTERM")
-    Exit(0) 
-  })
-  RegisterSignalHandler(os.SIGUSR1, func() { 
-    fmt.Print("in signal handler USR1")
-  })
-  
-  go handleSignals()
+	m2datas := string(datain)
+	if strings.Contains(m2datas, `{"METHOD":"JSON"},21:{"type":"disconnect"}`) {
+		//should we return something?  notify handler?
+		return
+	}
 
-  loadConfig()
-  
+	m2req, tnerr := M2Parse(m2datas)
+	if tnerr != nil && (m2req != nil && len(m2req.uuid) != 0) {
+		log.Print("ERROR", tnerr.Error())
+		errmsg := ", HTTP/1.1 500 Internal Server Error\nContent-Type: text/html; charset=utf-8\nContent-Length: 0"
+		errmsg = fmt.Sprintf("%s %d:%s, %s", m2req.uuid, len(m2req.requestid), m2req.requestid, errmsg)
+		response([]byte(errmsg))
+		return
+	} else if tnerr != nil {
+		log.Print("ERROR", tnerr.Error())
+		return
+	}
+
+	req, err := ReadHttpRequest(m2req)
+	//log.Println(req)
+
+	if err != nil {
+		// TODO: tap into web.go 500 mechanism
+		log.Print("error", err.Error())
+		return
+	}
+	w := &M2Writer{req, m2req, false, bytes.Buffer{}, bytes.Buffer{}, response, NewResponse(req), false}
+
+	//m.ServeHTTP(w, req)
+	handler.ServeHTTP(w, req)
+
+	w.Flush()
+
 }
 
-
-// server Method to initialize with config
-func loadConfig(){
-  
-  flag.StringVar(&M2Config.configFile, "config", "none", "Config File to use")
-  flag.BoolVar(&M2Config.useconsole, "useconsole", true, "log to console?")
-  flag.Parse()
-
-  if M2Config.configFile != "none" {
-    //c, _ := config.ReadDefault(M2Config.configFile)
-    //  read log file etc
-
-  } else {
-
-    if M2Config.useconsole == true {
-      fmt.Println("Logging to console")
-    }
-  }
-  
+// the  pattern muxer for M2go, is a light adapter 
+// over pat
+type M2Mux struct {
+	*pat.PatternServeMux
 }
 
-//Runs the web application and serves scgi requests
-func Run(addr string) {
-  web.Runner(addr, M2Runner)
+func (m *M2Mux) Disconnect(pat string, h http.Handler) {
+	m.Add("POST", pat, h)
+}
+func New() *M2Mux {
+	return &M2Mux{pat.New()}
 }
 
-// method for server that Runs the web application, sets up m2 connections
-// and serves http requests
+// the listen and server for mongrel, expects an address like this
 // @addr = string config parameter like this:   
-//    "tcp://127.0.0.1:9555|tcp://127.0.0.1:9556|54c6755b-9628-40a4-9a2d-cc82a816345e"
-func M2Runner(s *web.Server, addr string) {
+//    m2go.ListenAndServe("tcp://127.0.0.1:9555|tcp://127.0.0.1:9556|54c6755b-9628-40a4-9a2d-cc82a816345e", handler)
+func ListenAndServe(addr string, handler http.Handler) {
+	var Context zmq.Context
+	var SocketIn zmq.Socket
+	var SocketOut zmq.Socket
+	var hasExited bool
+	var err error
 
-  var Context zmq.Context
-  var SocketIn zmq.Socket
-  var SocketOut zmq.Socket
+	m2addr := strings.Split(addr, "|") //  
 
-  m2addr := strings.Split(addr,"|")//  
-  
-  // turn off static web serving from web.go, it is handled by mongrel2
-  s.Config.StaticDir = "NONE"
+	log.Printf("m2go serving  %s\n", addr)
 
-  if s.Logger == nil {
-    s.Logger = Logger
-  }
-  s.Logger.Printf("web.go serving m2 %s\n", addr)
-  
-  /*
-  Connection to ZMQ setup
-  */
-  var err error
-  if Context, err = zmq.NewContext(); err != nil {
-    panic("No ZMQ Context?")
-  }
-  defer Context.Close()
+	/*
+	  Connection to ZMQ setup
+	*/
+	connect := func() {
+		if Context, err = zmq.NewContext(); err != nil {
+			panic("No ZMQ Context?")
+		}
 
-  // listen for incoming requests
-  if SocketIn, err = Context.NewSocket(zmq.PULL); err != nil {
-    panic("No ZMQ Socket?")
-  }
-  defer SocketIn.Close()
-  SocketIn.Connect(m2addr[0])
+		// listen for incoming requests
+		if SocketIn, err = Context.NewSocket(zmq.PULL); err != nil {
+			panic("No ZMQ Socket?")
+		}
+		SocketIn.Connect(m2addr[0])
 
+		if SocketOut, err = Context.NewSocket(zmq.PUB); err != nil {
+			panic("No ZMQ Socket Outbound??")
+		}
+		// outbound response on a different channel
+		SocketOut.SetSockOptString(zmq.IDENTITY, m2addr[2])
+		//socket.SetSockOptString(zmq.SUBSCRIBE, filter)
+		SocketOut.Connect(m2addr[1])
+	}
 
-  if SocketOut, err = Context.NewSocket(zmq.PUB); err != nil {
-    panic("No ZMQ Socket Outbound??")
-  }
-  // outbound response on a different channel
-  SocketOut.SetSockOptString(zmq.IDENTITY, m2addr[2])
-  //socket.SetSockOptString(zmq.SUBSCRIBE, filter)
-  defer SocketOut.Close()
-  SocketOut.Connect(m2addr[1])
-  
-  handleResponse := func(response string) {
-    SocketOut.Send([]byte(response), 0)
-  }
-  
-  for {
-    // each inbound request
-    datapt, err := SocketIn.Recv(0)
-    if err != nil {
-      Logger.Println("ZMQ Socket Input accept error", err.Error())
-    }
-    go HandleM2Request(s,datapt,handleResponse)
-  }
-    
+	connect()
+
+	handleResponse := func(response []byte) {
+		SocketOut.Send(response, 0)
+	}
+	stopper := func() {
+		if !hasExited {
+			hasExited = true
+			SocketOut.Close()
+			SocketIn.Close()
+			Context.Close()
+		}
+	}
+	defer stopper()
+
+	for {
+		// each inbound request
+		m2data, err := SocketIn.Recv(0)
+		//log.Println(string(m2data))
+		if err != nil {
+			log.Println("ZMQ Socket Input accept error ", err.Error())
+		} else {
+			go HandleM2Request(m2data, handleResponse, handler)
+		}
+	}
+	log.Print("after close of runner")
 }

@@ -1,0 +1,8 @@
+To run these examples use go run:
+
+
+	go run simple.go
+
+	go run stream.go
+
+	

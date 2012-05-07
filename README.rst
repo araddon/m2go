@@ -6,7 +6,7 @@ Installation
 
 Requires mongrel2, and a configured mongrel2 website.   
 
-Currently built against go-weekly   weekly-2011-11-18
+Currently built against go-tip   weekly-2012-02-24
 
 Uses a custom version of Web.go (see github) until patches make it in.
 
